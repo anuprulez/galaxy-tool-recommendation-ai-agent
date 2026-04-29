@@ -40,7 +40,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--top-k",
         type=int,
-        default=5,
+        default=3,
         help="Number of workflow summaries to retrieve.",
     )
     parser.add_argument(
@@ -84,6 +84,7 @@ def retrieve_context(index, query: str, top_k: int) -> list[dict[str, object]]:
                 "name": metadata.get("name"),
                 "source_file": metadata.get("source_file"),
                 "text": node.node.get_content(),
+                "tags": metadata.get("tags", []),
             }
         )
     return contexts
@@ -103,6 +104,7 @@ def answer_query(query: str, contexts: list[dict[str, object]], model: str, base
             f"Workflow: {context.get('name')}\n"
             f"Workflow id: {context.get('workflow_id')}\n"
             f"Similarity score: {context.get('score')}\n"
+            f"Tags: {', '.join(context.get('tags', []))}\n"
             f"{context.get('text')}"
         )
         for index, context in enumerate(contexts, start=1)

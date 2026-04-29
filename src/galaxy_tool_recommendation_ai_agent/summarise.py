@@ -10,18 +10,26 @@ from typing import Any
 DEFAULT_INPUT_DIR = "data/workflows_published"
 DEFAULT_OUTPUT_FILE = "data/workflow_summaries.json"
 DEFAULT_PROMPT = (
-    "You are an expert bioinformatics agent and"
-    "Summarise this Galaxy workflow for creating a robust bioinformatics tool recommendation system. "
-    "Include the workflow purpose, all analysis stages, all Galaxy tools, their expected inputs and "
-    "expected outputs, and suitable user intents. Keep the summary concise and factual."
+    #"Summarise this Galaxy workflow for a bioinformatics to be useful for a tool recommendation task."
+    #"Include the workflow purpose, main analysis stages, key Galaxy tools, expected inputs," 
+    #"expected outputs, and suitable user intents. Keep the summary concise and factual."
+    #"Avoid adding tool ids. Make sure to include each tool's input and output datatypes if mentioned in the workflow context."
+    "You are an expert bioinformatics agent. Summarise the Galaxy workflow, "
+    "and provide your summary as answers to these questions for each workflow step: "
+    "a) the workflow's purpose, b) all workflow steps, c) all involved Galaxy tools and their brief descriptions, " 
+    "d) their input and output formats and e) for which datasets and analyses tools can be used."
+    "Use only the workflow context provided. Do not invent tools or outputs or formats."
 )
+
+# Good prompt:
+# Summarise this Galaxy workflow for a bioinformatics tool recommendation system. Include the workflow purpose, main analysis stages, key Galaxy tools, expected inputs, expected outputs, and suitable user intents. Keep the summary concise and factual.
 
 # sample prompt for tool recommendation agent:
 #"You are an expert bioinformatics agent. Go through the workflow file to summarise them and provide your output as answers to these questions for each step: Name of the tool and its input and output types and for which datasets the tool can be used. \
 # Use only the workflow context provided. Do not invent tools or outputs.",
 
 
-def parse_args() -> argparse.Namespace:
+def parse_args() -> argparse.Namespace:#
     parser = argparse.ArgumentParser(
         description="Summarise published Galaxy workflow JSON files with LangChain."
     )
