@@ -1,7 +1,33 @@
 [project]
 name = "galaxy-tool-recommendation-ai-agent"
 version = "0.1.0"
-description = "Add your description here"
+description = "A local AI task agent that interprets natural language instructions and executes them with Ollama-backed models."
 readme = "README.md"
 requires-python = ">=3.12"
-dependencies = []
+dependencies = [
+    "langchain-core>=0.3",
+    "langchain-ollama>=0.2",
+    "llama-index-core>=0.12",
+    "llama-index-embeddings-ollama>=0.5",
+    "llama-index-llms-ollama>=0.5",
+    "requests>=2.32",
+]
+
+[project.scripts]
+galaxy-agent = "galaxy_tool_recommendation_ai_agent.cli:main"
+graphify = "galaxy_tool_recommendation_ai_agent.build_topic_graph:main"
+build-kb = "galaxy_tool_recommendation_ai_agent.build_kb:main"
+collect-gtn-material = "galaxy_tool_recommendation_ai_agent.collect_gtn_material:main"
+collect-published-histories = "galaxy_tool_recommendation_ai_agent.collect_published_histories:main"
+collect-iwc-workflows = "galaxy_tool_recommendation_ai_agent.collect_iwc_workflows:main"
+collect-published-workflows = "galaxy_tool_recommendation_ai_agent.collect_published_workflows:main"
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools]
+package-dir = {"" = "src"}
+
+[tool.setuptools.packages.find]
+where = ["src"]

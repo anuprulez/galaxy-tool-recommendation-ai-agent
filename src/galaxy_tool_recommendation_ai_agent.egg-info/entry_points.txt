@@ -1,0 +1,8 @@
+[console_scripts]
+build-kb = galaxy_tool_recommendation_ai_agent.build_kb:main
+collect-gtn-material = galaxy_tool_recommendation_ai_agent.collect_gtn_material:main
+collect-iwc-workflows = galaxy_tool_recommendation_ai_agent.collect_iwc_workflows:main
+collect-published-histories = galaxy_tool_recommendation_ai_agent.collect_published_histories:main
+collect-published-workflows = galaxy_tool_recommendation_ai_agent.collect_published_workflows:main
+galaxy-agent = galaxy_tool_recommendation_ai_agent.cli:main
+graphify = galaxy_tool_recommendation_ai_agent.build_topic_graph:main

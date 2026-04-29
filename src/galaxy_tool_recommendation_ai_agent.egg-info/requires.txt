@@ -1,0 +1,6 @@
+langchain-core>=0.3
+langchain-ollama>=0.2
+llama-index-core>=0.12
+llama-index-embeddings-ollama>=0.5
+llama-index-llms-ollama>=0.5
+requests>=2.32

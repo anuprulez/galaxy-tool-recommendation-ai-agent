@@ -1,0 +1,2 @@
+"""Galaxy task agent package."""
+

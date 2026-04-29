@@ -3,7 +3,7 @@ import sys
 
 sys.path.insert(0, str(Path(__file__).resolve().parent / "src"))
 
-from galaxy_tool_recommendation_ai_agent.cli import main
+from galaxy_tool_recommendation_ai_agent.build_kb import main
 
 
 if __name__ == "__main__":

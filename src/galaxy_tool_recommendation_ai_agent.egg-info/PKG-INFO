@@ -1,3 +1,18 @@
+Metadata-Version: 2.4
+Name: galaxy-tool-recommendation-ai-agent
+Version: 0.1.0
+Summary: A local AI task agent that interprets natural language instructions and executes them with Ollama-backed models.
+Requires-Python: >=3.12
+Description-Content-Type: text/markdown
+License-File: LICENSE
+Requires-Dist: langchain-core>=0.3
+Requires-Dist: langchain-ollama>=0.2
+Requires-Dist: llama-index-core>=0.12
+Requires-Dist: llama-index-embeddings-ollama>=0.5
+Requires-Dist: llama-index-llms-ollama>=0.5
+Requires-Dist: requests>=2.32
+Dynamic: license-file
+
 # galaxy-tool-recommendation-ai-agent
 
 Local Q&A agent that accepts a natural-language prompt and answers it with an Ollama model running on your machine.
