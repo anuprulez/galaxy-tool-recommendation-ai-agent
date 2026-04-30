@@ -3,6 +3,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import re
 from pathlib import Path
 from typing import Any
 
@@ -10,6 +11,11 @@ from typing import Any
 DEFAULT_INPUT_DIR = "data/workflows_published"
 DEFAULT_OUTPUT_FILE = "data/workflow_summaries.json"
 DEFAULT_PROMPT_FILE = "prompts/workflow_summary.yml"
+DEFAULT_OLLAMA_MODEL = "llama2:7b"
+DEFAULT_OPENAI_MODEL = "gpt-4o-mini"
+DEFAULT_OPENAI_BASE_URL = "https://openwebui.uni-freiburg.de/api"
+
+#"https://api.openai.com/v1"
 
 
 def parse_args() -> argparse.Namespace:#
@@ -40,13 +46,31 @@ def parse_args() -> argparse.Namespace:#
     )
     parser.add_argument(
         "--model",
-        default=os.getenv("OLLAMA_MODEL", "llama2:7b"),
-        help="Ollama model name used through LangChain.",
+        help=(
+            "LLM model name. Defaults to OPENAI_MODEL for OpenAI mode or "
+            "OLLAMA_MODEL for Ollama mode."
+        ),
+    )
+    parser.add_argument(
+        "--provider",
+        choices=("auto", "ollama", "openai"),
+        default="auto",
+        help=(
+            "LLM provider. In auto mode, OpenAI-compatible chat is used when "
+            "OPENAI_API_KEY or OPENWEBUI_API_KEY is available; otherwise Ollama is used."
+        ),
     )
     parser.add_argument(
         "--base-url",
         default=os.getenv("OLLAMA_BASE_URL", "http://127.0.0.1:11434"),
-        help="Ollama base URL.",
+        help="Ollama base URL. Ignored in OpenAI mode.",
+    )
+    parser.add_argument(
+        "--openai-base-url",
+        help=(
+            "OpenAI-compatible API base URL. Defaults to OPENAI_BASE_URL, "
+            "or the public OpenAI API URL."
+        ),
     )
     parser.add_argument(
         "--temperature",
@@ -104,6 +128,52 @@ def load_yaml_prompt_file(path: Path) -> dict[str, Any]:
     if not isinstance(data, dict):
         raise ValueError(f"Prompt YAML must contain a mapping: {path}")
     return data
+
+
+def load_env_file(path: Path = Path(".env")) -> None:
+    if not path.exists():
+        return
+
+    for raw_line in path.read_text(encoding="utf-8").splitlines():
+        line = raw_line.strip()
+        if not line or line.startswith("#") or "=" not in line:
+            continue
+        key, value = line.split("=", maxsplit=1)
+        key = key.strip()
+        value = value.strip().strip("\"'")
+        if key and key not in os.environ:
+            os.environ[key] = value
+
+
+def resolve_openai_api_key() -> str:
+    return (
+        os.getenv("OPENAI_API_KEY", "").strip()
+        or os.getenv("OPENWEBUI_API_KEY", "").strip()
+    )
+
+
+def resolve_provider(provider: str) -> str:
+    has_openai_key = bool(resolve_openai_api_key())
+    if provider == "auto":
+        return "openai" if has_openai_key else "ollama"
+    if provider == "openai" and not has_openai_key:
+        raise RuntimeError(
+            "OPENAI_API_KEY or OPENWEBUI_API_KEY is required for OpenAI mode. "
+            "Add one of them to .env or the environment."
+        )
+    return provider
+
+
+def resolve_model(model: str | None, provider: str) -> str:
+    if model:
+        return model
+    if provider == "openai":
+        return os.getenv("OPENAI_MODEL", DEFAULT_OPENAI_MODEL)
+    return os.getenv("OLLAMA_MODEL", DEFAULT_OLLAMA_MODEL)
+
+
+def resolve_openai_base_url(base_url: str | None) -> str:
+    return base_url or os.getenv("OPENAI_BASE_URL", DEFAULT_OPENAI_BASE_URL)
 
 
 def iter_workflow_files(input_dir: Path, limit: int | None) -> list[Path]:
@@ -238,12 +308,19 @@ def format_connections(connections: Any) -> str:
     return "; ".join(formatted)
 
 
-def build_summary_chain(model: str, base_url: str, temperature: float, prompt: str):
+def build_summary_chain(
+    provider: str,
+    model: str,
+    base_url: str,
+    openai_base_url: str,
+    openai_api_key: str,
+    temperature: float,
+    prompt: str,
+):
     try:
         from langchain_core.messages import SystemMessage
         from langchain_core.output_parsers import StrOutputParser
         from langchain_core.prompts import ChatPromptTemplate
-        from langchain_ollama import ChatOllama
     except ImportError as exc:
         raise RuntimeError(
             "LangChain dependencies are missing. Install the project dependencies first, "
@@ -259,7 +336,31 @@ def build_summary_chain(model: str, base_url: str, temperature: float, prompt: s
             ),
         ]
     )
-    llm = ChatOllama(model=model, base_url=base_url, temperature=temperature)
+    if provider == "openai":
+        try:
+            from langchain_openai import ChatOpenAI
+        except ImportError as exc:
+            raise RuntimeError(
+                "OpenAI LangChain dependency is missing. Install project dependencies "
+                "with `pip install -e .`."
+            ) from exc
+
+        llm = ChatOpenAI(
+            model=model,
+            temperature=temperature,
+            api_key=openai_api_key,
+            base_url=openai_base_url,
+        )
+    else:
+        try:
+            from langchain_ollama import ChatOllama
+        except ImportError as exc:
+            raise RuntimeError(
+                "Ollama LangChain dependency is missing. Install project dependencies "
+                "with `pip install -e .`."
+            ) from exc
+
+        llm = ChatOllama(model=model, base_url=base_url, temperature=temperature)
     return prompt | llm | StrOutputParser()
 
 
@@ -290,10 +391,36 @@ def write_results(output_file: Path, results: list[dict[str, Any]]) -> None:
     output_file.write_text(json.dumps(results, indent=2, ensure_ascii=False), encoding="utf-8")
 
 
+def parse_summary_json(summary: str) -> dict[str, Any]:
+    cleaned = strip_markdown_json_fence(summary.strip())
+    try:
+        parsed = json.loads(cleaned)
+    except json.JSONDecodeError as exc:
+        raise ValueError(f"LLM summary is not valid JSON: {exc}") from exc
+
+    if not isinstance(parsed, dict):
+        raise ValueError("LLM summary JSON must be an object.")
+    return parsed
+
+
+def strip_markdown_json_fence(text: str) -> str:
+    if len(text) >= 2 and text[0] == text[-1] and text[0] in {"'", '"'}:
+        text = text[1:-1].strip()
+
+    match = re.search(r"```(?:json)?\s*(.*?)\s*```", text, flags=re.DOTALL | re.IGNORECASE)
+    if match:
+        return match.group(1).strip()
+    return text
+
+
 def summarise_workflows(args: argparse.Namespace) -> None:
     input_dir = Path(args.input_dir)
     output_file = Path(args.output_file)
     instruction = load_prompt(args)
+    provider = resolve_provider(args.provider)
+    model = resolve_model(args.model, provider)
+    openai_api_key = resolve_openai_api_key()
+    openai_base_url = resolve_openai_base_url(args.openai_base_url)
 
     if not input_dir.exists():
         raise FileNotFoundError(f"Input directory does not exist: {input_dir}")
@@ -307,7 +434,15 @@ def summarise_workflows(args: argparse.Namespace) -> None:
         item for item in existing_results if item.get("status") == "summarised"
     ]
     completed_ids = existing_workflow_ids(output_file) if args.resume else set()
-    chain = build_summary_chain(args.model, args.base_url, args.temperature, instruction)
+    chain = build_summary_chain(
+        provider,
+        model,
+        args.base_url,
+        openai_base_url,
+        openai_api_key,
+        args.temperature,
+        instruction,
+    )
 
     for index, path in enumerate(files, start=1):
         workflow_id = workflow_id_from_filename(path)
@@ -328,7 +463,9 @@ def summarise_workflows(args: argparse.Namespace) -> None:
             "annotation": workflow.get("annotation"),
             "tags": workflow.get("tags") or [],
             "summary_prompt": instruction,
-            "summary_model": args.model,
+            "summary_provider": provider,
+            "summary_model": model,
+            "summary_base_url": openai_base_url if provider == "openai" else args.base_url,
         }
 
         try:
@@ -339,7 +476,7 @@ def summarise_workflows(args: argparse.Namespace) -> None:
                 }
             ).strip()
             record["status"] = "summarised"
-            record["summary"] = summary
+            record["summary"] = parse_summary_json(summary)
             print(f"[{index}/{len(files)}] summarised: {path.name}")
         except Exception as exc:
             record["status"] = "failed"
@@ -354,6 +491,7 @@ def summarise_workflows(args: argparse.Namespace) -> None:
 
 
 def main() -> None:
+    load_env_file()
     args = parse_args()
     summarise_workflows(args)
 

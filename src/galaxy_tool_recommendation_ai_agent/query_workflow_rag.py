@@ -11,8 +11,14 @@ from typing import Any
 DEFAULT_INDEX_DIR = "data/workflow_summary_index"
 DEFAULT_PROMPT_FILE = "prompts/workflow_rag.yml"
 DEFAULT_RESPONSE_OUTPUT_FILE = "data/output/wf_rag_llm_responses.json"
-DEFAULT_EMBED_MODEL = os.getenv("OLLAMA_EMBED_MODEL", "nomic-embed-text")
-DEFAULT_LLM_MODEL = os.getenv("OLLAMA_MODEL", "llama2:7b")
+DEFAULT_OLLAMA_EMBED_MODEL = "nomic-embed-text"
+DEFAULT_OPENAI_EMBED_MODEL = "text-embedding-3-small"
+DEFAULT_OLLAMA_LLM_MODEL = "llama2:7b"
+DEFAULT_OPENAI_LLM_MODEL = "gpt-4o-mini"
+DEFAULT_OPENAI_BASE_URL = "https://openwebui.uni-freiburg.de/api"
+#"https://api.openai.com/v1"
+DEFAULT_EMBED_MODEL = os.getenv("OLLAMA_EMBED_MODEL", DEFAULT_OLLAMA_EMBED_MODEL)
+DEFAULT_LLM_MODEL = os.getenv("OLLAMA_MODEL", DEFAULT_OLLAMA_LLM_MODEL)
 DEFAULT_OLLAMA_BASE_URL = os.getenv("OLLAMA_BASE_URL", "http://127.0.0.1:11434")
 
 
@@ -28,18 +34,48 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument(
         "--embed-model",
-        default=DEFAULT_EMBED_MODEL,
-        help="Ollama embedding model used when querying the index.",
+        help=(
+            "Embedding model used when querying the index. Defaults to "
+            "OPENAI_EMBED_MODEL for OpenAI mode or OLLAMA_EMBED_MODEL for Ollama mode."
+        ),
+    )
+    parser.add_argument(
+        "--embed-provider",
+        choices=("auto", "ollama", "openai"),
+        default="ollama",
+        help=(
+            "Embedding provider. Use the same provider/model used to build the index. "
+            "In auto mode, OpenAI-compatible embeddings are used when OPENAI_API_KEY "
+            "or OPENWEBUI_API_KEY is available; otherwise Ollama is used."
+        ),
     )
     parser.add_argument(
         "--model",
-        default=DEFAULT_LLM_MODEL,
-        help="Ollama LLM model used to answer the query.",
+        help=(
+            "LLM model used to answer the query. Defaults to OPENAI_MODEL for OpenAI "
+            "mode or OLLAMA_MODEL for Ollama mode."
+        ),
+    )
+    parser.add_argument(
+        "--provider",
+        choices=("auto", "ollama", "openai"),
+        default="ollama",
+        help=(
+            "Answer LLM provider. In auto mode, OpenAI-compatible chat is used when "
+            "OPENAI_API_KEY or OPENWEBUI_API_KEY is available; otherwise Ollama is used."
+        ),
     )
     parser.add_argument(
         "--base-url",
         default=DEFAULT_OLLAMA_BASE_URL,
-        help="Ollama base URL.",
+        help="Ollama base URL. Ignored in OpenAI mode.",
+    )
+    parser.add_argument(
+        "--openai-base-url",
+        help=(
+            "OpenAI-compatible API base URL. Defaults to OPENAI_BASE_URL, "
+            "or the public OpenAI API URL."
+        ),
     )
     parser.add_argument(
         "--top-k",
@@ -68,6 +104,60 @@ def parse_args() -> argparse.Namespace:
     return parser.parse_args()
 
 
+def load_env_file(path: Path = Path(".env")) -> None:
+    if not path.exists():
+        return
+
+    for raw_line in path.read_text(encoding="utf-8").splitlines():
+        line = raw_line.strip()
+        if not line or line.startswith("#") or "=" not in line:
+            continue
+        key, value = line.split("=", maxsplit=1)
+        key = key.strip()
+        value = value.strip().strip("\"'")
+        if key and key not in os.environ:
+            os.environ[key] = value
+
+
+def resolve_openai_api_key() -> str:
+    return (
+        os.getenv("OPENAI_API_KEY", "").strip()
+        or os.getenv("OPENWEBUI_API_KEY", "").strip()
+    )
+
+
+def resolve_provider(provider: str) -> str:
+    has_openai_key = bool(resolve_openai_api_key())
+    if provider == "auto":
+        return "openai" if has_openai_key else "ollama"
+    if provider == "openai" and not has_openai_key:
+        raise RuntimeError(
+            "OPENAI_API_KEY or OPENWEBUI_API_KEY is required for OpenAI mode. "
+            "Add one of them to .env or the environment."
+        )
+    return provider
+
+
+def resolve_embed_model(model: str | None, provider: str) -> str:
+    if model:
+        return model
+    if provider == "openai":
+        return os.getenv("OPENAI_EMBED_MODEL", DEFAULT_OPENAI_EMBED_MODEL)
+    return os.getenv("OLLAMA_EMBED_MODEL", DEFAULT_OLLAMA_EMBED_MODEL)
+
+
+def resolve_llm_model(model: str | None, provider: str) -> str:
+    if model:
+        return model
+    if provider == "openai":
+        return os.getenv("OPENAI_MODEL", DEFAULT_OPENAI_LLM_MODEL)
+    return os.getenv("OLLAMA_MODEL", DEFAULT_OLLAMA_LLM_MODEL)
+
+
+def resolve_openai_base_url(base_url: str | None) -> str:
+    return base_url or os.getenv("OPENAI_BASE_URL", DEFAULT_OPENAI_BASE_URL)
+
+
 def load_prompt_template(prompt_file: Path) -> str:
     try:
         import yaml
@@ -91,10 +181,16 @@ def load_prompt_template(prompt_file: Path) -> str:
     )
 
 
-def load_index(index_dir: Path, embed_model: str, base_url: str):
+def load_index(
+    index_dir: Path,
+    embed_provider: str,
+    embed_model: str,
+    base_url: str,
+    openai_base_url: str,
+    openai_api_key: str,
+):
     try:
         from llama_index.core import Settings, StorageContext, load_index_from_storage
-        from llama_index.embeddings.ollama import OllamaEmbedding
     except ImportError as exc:
         raise RuntimeError(
             "LlamaIndex dependencies are missing. Install them with `pip install -e .`."
@@ -106,7 +202,31 @@ def load_index(index_dir: Path, embed_model: str, base_url: str):
             "Run `python build_workflow_vectors.py` first."
         )
 
-    Settings.embed_model = OllamaEmbedding(model_name=embed_model, base_url=base_url)
+    if embed_provider == "openai":
+        try:
+            from llama_index.embeddings.openai import OpenAIEmbedding
+        except ImportError as exc:
+            raise RuntimeError(
+                "LlamaIndex OpenAI embedding dependency is missing. "
+                "Install project dependencies with `pip install -e .`."
+            ) from exc
+
+        Settings.embed_model = OpenAIEmbedding(
+            model=embed_model,
+            api_key=openai_api_key,
+            api_base=openai_base_url,
+        )
+    else:
+        try:
+            from llama_index.embeddings.ollama import OllamaEmbedding
+        except ImportError as exc:
+            raise RuntimeError(
+                "LlamaIndex Ollama embedding dependency is missing. "
+                "Install project dependencies with `pip install -e .`."
+            ) from exc
+
+        Settings.embed_model = OllamaEmbedding(model_name=embed_model, base_url=base_url)
+
     storage_context = StorageContext.from_defaults(persist_dir=str(index_dir))
     return load_index_from_storage(storage_context)
 
@@ -157,19 +277,38 @@ def build_answer_prompt(
 def answer_query(
     query: str,
     contexts: list[dict[str, object]],
+    provider: str,
     model: str,
     base_url: str,
+    openai_base_url: str,
+    openai_api_key: str,
     prompt_template: str,
 ) -> str:
-    try:
-        from llama_index.llms.ollama import Ollama
-    except ImportError as exc:
-        raise RuntimeError(
-            "LlamaIndex Ollama LLM dependency is missing. Install it with `pip install -e .`."
-        ) from exc
-
     prompt = build_answer_prompt(query, contexts, prompt_template)
-    llm = Ollama(model=model, base_url=base_url, request_timeout=180.0)
+    if provider == "openai":
+        try:
+            from llama_index.llms.openai import OpenAI
+        except ImportError as exc:
+            raise RuntimeError(
+                "LlamaIndex OpenAI LLM dependency is missing. "
+                "Install project dependencies with `pip install -e .`."
+            ) from exc
+
+        llm = OpenAI(
+            model=model,
+            api_key=openai_api_key,
+            api_base=openai_base_url,
+            request_timeout=600.0,
+        )
+    else:
+        try:
+            from llama_index.llms.ollama import Ollama
+        except ImportError as exc:
+            raise RuntimeError(
+                "LlamaIndex Ollama LLM dependency is missing. Install it with `pip install -e .`."
+            ) from exc
+
+        llm = Ollama(model=model, base_url=base_url, request_timeout=600.0)
     response = llm.complete(prompt)
     return str(response).strip()
 
@@ -211,13 +350,27 @@ def load_saved_responses(output_file: Path) -> list[dict[str, Any]]:
 
 
 def main() -> None:
+    load_env_file()
     args = parse_args()
     query = " ".join(args.query).strip()
     if not query:
         raise SystemExit("Provide a user query.")
 
+    embed_provider = resolve_provider(args.embed_provider)
+    llm_provider = resolve_provider(args.provider)
+    embed_model = resolve_embed_model(args.embed_model, embed_provider)
+    llm_model = resolve_llm_model(args.model, llm_provider)
+    openai_api_key = resolve_openai_api_key()
+    openai_base_url = resolve_openai_base_url(args.openai_base_url)
     prompt_template = load_prompt_template(Path(args.prompt_file))
-    index = load_index(Path(args.index_dir), embed_model=args.embed_model, base_url=args.base_url)
+    index = load_index(
+        Path(args.index_dir),
+        embed_provider=embed_provider,
+        embed_model=embed_model,
+        base_url=args.base_url,
+        openai_base_url=openai_base_url,
+        openai_api_key=openai_api_key,
+    )
     contexts = retrieve_context(index, query=query, top_k=args.top_k)
     if args.show_context:
         print(json.dumps(contexts, indent=2, ensure_ascii=False))
@@ -226,8 +379,11 @@ def main() -> None:
     answer = answer_query(
         query,
         contexts,
-        model=args.model,
+        provider=llm_provider,
+        model=llm_model,
         base_url=args.base_url,
+        openai_base_url=openai_base_url,
+        openai_api_key=openai_api_key,
         prompt_template=prompt_template,
     )
     save_generated_response(
@@ -235,8 +391,12 @@ def main() -> None:
         query=query,
         response=answer,
         metadata={
-            "model": args.model,
-            "embed_model": args.embed_model,
+            "provider": llm_provider,
+            "model": llm_model,
+            "embed_provider": embed_provider,
+            "embed_model": embed_model,
+            "base_url": openai_base_url if llm_provider == "openai" else args.base_url,
+            "embed_base_url": openai_base_url if embed_provider == "openai" else args.base_url,
             "top_k": args.top_k,
             "prompt_file": args.prompt_file,
             "retrieved_workflows": [

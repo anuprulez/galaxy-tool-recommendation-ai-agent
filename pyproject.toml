@@ -7,8 +7,11 @@ requires-python = ">=3.12"
 dependencies = [
     "langchain-core>=0.3",
     "langchain-ollama>=0.2",
+    "langchain-openai>=0.2",
     "llama-index-core>=0.12",
+    "llama-index-embeddings-openai>=0.3",
     "llama-index-embeddings-ollama>=0.5",
+    "llama-index-llms-openai>=0.3",
     "llama-index-llms-ollama>=0.5",
     "PyYAML>=6.0",
     "requests>=2.32",

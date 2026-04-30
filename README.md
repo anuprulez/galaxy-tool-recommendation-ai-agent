@@ -164,7 +164,15 @@ To generate LangChain/Ollama summaries for workflows in `data/workflows_publishe
 python summarise.py --output-file data/workflow_summaries.json --resume
 ```
 
-By default, the summary instruction is read from `prompts/workflow_summary.yml`. Use `--prompt-file` to point at another YAML file containing `summary_prompt` or `prompt`, or use `--prompt` to override it directly. The output is a JSON list with one record per workflow, including the source file, workflow metadata, prompt, model, status, and summary text.
+By default, the summary instruction is read from `prompts/workflow_summary.yml`. Use `--prompt-file` to point at another YAML file containing `summary_prompt` or `prompt`, or use `--prompt` to override it directly. The summariser uses Ollama unless `OPENAI_API_KEY` or `OPENWEBUI_API_KEY` is available in `.env` or the environment, in which case it uses OpenAI-compatible chat completions. Set `OPENAI_MODEL` to choose the model, and set `OPENAI_BASE_URL` for a compatible endpoint such as OpenWebUI:
+
+```env
+OPENWEBUI_API_KEY=your_openwebui_api_key
+OPENAI_BASE_URL=https://openwebui.uni-freiburg.de/api
+OPENAI_MODEL=gpt-4o
+```
+
+You can also pass `--provider ollama|openai`, `--model`, and `--openai-base-url` explicitly. The output is a JSON list with one record per workflow, including the source file, workflow metadata, prompt, provider, model, status, and summary text.
 
 ## Workflow Summary RAG
 
@@ -174,6 +182,17 @@ Build a LlamaIndex vector index from `data/workflow_summaries.json`:
 python build_workflow_vectors.py
 ```
 
+The vector builder uses Ollama embeddings unless `OPENAI_API_KEY` or `OPENWEBUI_API_KEY` is available in `.env` or the environment. For OpenWebUI-compatible embeddings and chat:
+
+```env
+OPENWEBUI_API_KEY=your_openwebui_api_key
+OPENAI_BASE_URL=https://openwebui.uni-freiburg.de/api
+OPENAI_MODEL=gpt-4o
+OPENAI_EMBED_MODEL=text-embedding-3-small
+```
+
+Use `--embed-provider ollama` to force the existing Ollama embedding behavior.
+
 Ask a question against the indexed workflow summaries:
 
 ```bash
@@ -182,9 +201,9 @@ python query_workflow_rag.py "Which workflows can analyse bacterial genome assem
 
 The answer prompt is read from `prompts/workflow_rag.yml` by default. Use `--prompt-file` to point at another YAML file containing `rag_prompt` or `prompt`; include `{context_text}` and `{query}` where the retrieved summaries and user query should be inserted.
 
-Generated answers are appended to `data/output/wf_rag_llm_responses.json` with the original query and retrieval metadata. Use `--response-output-file` to write to a different JSON file.
+Generated answers are appended to `data/output/wf_rag_llm_responses.json` with the original query and retrieval metadata. Use `--response-output-file` to write to a different JSON file. Querying uses the same auto provider behavior for both embeddings and the answer LLM; use `--embed-provider ollama` or `--provider ollama` to force the older Ollama path.
 
-Both scripts use Ollama by default. `OLLAMA_EMBED_MODEL` controls the embedding model, while `OLLAMA_MODEL` controls the answer model.
+Without an OpenAI-compatible API key, both scripts use Ollama by default. `OLLAMA_EMBED_MODEL` controls the embedding model, while `OLLAMA_MODEL` controls the answer model.
 
 ## Collect IWC Workflows
 
