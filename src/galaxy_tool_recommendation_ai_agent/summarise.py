@@ -9,24 +9,7 @@ from typing import Any
 
 DEFAULT_INPUT_DIR = "data/workflows_published"
 DEFAULT_OUTPUT_FILE = "data/workflow_summaries.json"
-DEFAULT_PROMPT = (
-    #"Summarise this Galaxy workflow for a bioinformatics to be useful for a tool recommendation task."
-    #"Include the workflow purpose, main analysis stages, key Galaxy tools, expected inputs," 
-    #"expected outputs, and suitable user intents. Keep the summary concise and factual."
-    #"Avoid adding tool ids. Make sure to include each tool's input and output datatypes if mentioned in the workflow context."
-    "You are an expert bioinformatics agent. Summarise the Galaxy workflow, "
-    "and provide your summary as answers to these questions for each workflow step: "
-    "a) the workflow's purpose, b) all workflow steps, c) all involved Galaxy tools and their brief descriptions, " 
-    "d) their input and output formats and e) for which datasets and analyses tools can be used."
-    "Use only the workflow context provided. Do not invent tools or outputs or formats."
-)
-
-# Good prompt:
-# Summarise this Galaxy workflow for a bioinformatics tool recommendation system. Include the workflow purpose, main analysis stages, key Galaxy tools, expected inputs, expected outputs, and suitable user intents. Keep the summary concise and factual.
-
-# sample prompt for tool recommendation agent:
-#"You are an expert bioinformatics agent. Go through the workflow file to summarise them and provide your output as answers to these questions for each step: Name of the tool and its input and output types and for which datasets the tool can be used. \
-# Use only the workflow context provided. Do not invent tools or outputs.",
+DEFAULT_PROMPT_FILE = "prompts/workflow_summary.yml"
 
 
 def parse_args() -> argparse.Namespace:#
@@ -45,12 +28,15 @@ def parse_args() -> argparse.Namespace:#
     )
     parser.add_argument(
         "--prompt",
-        default=DEFAULT_PROMPT,
-        help="Instruction prompt used for each workflow summary.",
+        help="Instruction prompt used for each workflow summary. Overrides --prompt-file.",
     )
     parser.add_argument(
         "--prompt-file",
-        help="Read the instruction prompt from a text file instead of --prompt.",
+        default=DEFAULT_PROMPT_FILE,
+        help=(
+            "Read the instruction prompt from a YAML file. The YAML must contain "
+            "a 'summary_prompt' or 'prompt' string."
+        ),
     )
     parser.add_argument(
         "--model",
@@ -88,9 +74,36 @@ def parse_args() -> argparse.Namespace:#
 
 
 def load_prompt(args: argparse.Namespace) -> str:
-    if args.prompt_file:
-        return Path(args.prompt_file).read_text(encoding="utf-8").strip()
-    return args.prompt.strip()
+    if args.prompt:
+        return args.prompt.strip()
+    if not args.prompt_file:
+        raise ValueError("Provide --prompt or --prompt-file.")
+
+    prompt_file = Path(args.prompt_file)
+    data = load_yaml_prompt_file(prompt_file)
+    for key in ("summary_prompt", "prompt"):
+        prompt = data.get(key)
+        if isinstance(prompt, str) and prompt.strip():
+            return prompt.strip()
+
+    raise ValueError(
+        f"Prompt YAML must contain a non-empty 'summary_prompt' or 'prompt' string: {prompt_file}"
+    )
+
+
+def load_yaml_prompt_file(path: Path) -> dict[str, Any]:
+    try:
+        import yaml
+    except ImportError as exc:
+        raise RuntimeError(
+            "PyYAML is required to read prompt YAML files. Install project dependencies "
+            "with `pip install -e .`."
+        ) from exc
+
+    data = yaml.safe_load(path.read_text(encoding="utf-8"))
+    if not isinstance(data, dict):
+        raise ValueError(f"Prompt YAML must contain a mapping: {path}")
+    return data
 
 
 def iter_workflow_files(input_dir: Path, limit: int | None) -> list[Path]:
@@ -227,6 +240,7 @@ def format_connections(connections: Any) -> str:
 
 def build_summary_chain(model: str, base_url: str, temperature: float, prompt: str):
     try:
+        from langchain_core.messages import SystemMessage
         from langchain_core.output_parsers import StrOutputParser
         from langchain_core.prompts import ChatPromptTemplate
         from langchain_ollama import ChatOllama
@@ -238,10 +252,7 @@ def build_summary_chain(model: str, base_url: str, temperature: float, prompt: s
 
     prompt = ChatPromptTemplate.from_messages(
         [
-            (
-                "system",
-                prompt,
-            ),
+            SystemMessage(content=prompt),
             (
                 "human",
                 "Instruction:\n{instruction}\n\nWorkflow context:\n{workflow_context}",
@@ -296,7 +307,7 @@ def summarise_workflows(args: argparse.Namespace) -> None:
         item for item in existing_results if item.get("status") == "summarised"
     ]
     completed_ids = existing_workflow_ids(output_file) if args.resume else set()
-    chain = build_summary_chain(args.model, args.base_url, args.temperature, args.prompt)
+    chain = build_summary_chain(args.model, args.base_url, args.temperature, instruction)
 
     for index, path in enumerate(files, start=1):
         workflow_id = workflow_id_from_filename(path)

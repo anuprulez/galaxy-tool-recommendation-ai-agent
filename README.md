@@ -164,7 +164,7 @@ To generate LangChain/Ollama summaries for workflows in `data/workflows_publishe
 python summarise.py --output-file data/workflow_summaries.json --resume
 ```
 
-Use `--prompt` or `--prompt-file` to control the summary instruction. The output is a JSON list with one record per workflow, including the source file, workflow metadata, prompt, model, status, and summary text.
+By default, the summary instruction is read from `prompts/workflow_summary.yml`. Use `--prompt-file` to point at another YAML file containing `summary_prompt` or `prompt`, or use `--prompt` to override it directly. The output is a JSON list with one record per workflow, including the source file, workflow metadata, prompt, model, status, and summary text.
 
 ## Workflow Summary RAG
 
