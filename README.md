@@ -180,6 +180,10 @@ Ask a question against the indexed workflow summaries:
 python query_workflow_rag.py "Which workflows can analyse bacterial genome assemblies?"
 ```
 
+The answer prompt is read from `prompts/workflow_rag.yml` by default. Use `--prompt-file` to point at another YAML file containing `rag_prompt` or `prompt`; include `{context_text}` and `{query}` where the retrieved summaries and user query should be inserted.
+
+Generated answers are appended to `data/output/wf_rag_llm_responses.json` with the original query and retrieval metadata. Use `--response-output-file` to write to a different JSON file.
+
 Both scripts use Ollama by default. `OLLAMA_EMBED_MODEL` controls the embedding model, while `OLLAMA_MODEL` controls the answer model.
 
 ## Collect IWC Workflows

@@ -1,0 +1,36 @@
+[
+  {
+    "query": "which tools can be used for for comparing biological sequences?",
+    "response": "User intent: Compare biological sequences.\n\nRecommended tools:\n\n1. BLAST (Why: BLAST is widely used for comparing biological sequences to identify similarities and infer evolutionary relationships. Evidence: The workflow uses BLAST in step 3 to compare the assembled contigs to the reference genome. Expected input/output: FASTA files.)\n2. QUAST (Why: QUAST is a tool for quantifying and comparing genomic features, such as gene content, repeat content, and sequence similarity. Evidence: The workflow uses QUAST in steps 6 and 7 to generate reports on the assembly quality and genome annotation. Expected input/output: BAM or FASTA files.)\n\nSuggested workflow path: BLAST > QUAST\n\nAlternatives: None mentioned in the context.\n\nLimitations: The choice of tools may depend on specific requirements or preferences of the user, and there may be other tools available for comparing biological sequences depending on the specific use case.",
+    "generated_at": "2026-04-30T11:54:14.566100+00:00",
+    "model": "llama2:7b",
+    "embed_model": "nomic-embed-text",
+    "top_k": 1,
+    "prompt_file": "prompts/workflow_rag.yml",
+    "retrieved_workflows": [
+      {
+        "workflow_id": "8b8e89b9b8801f2f",
+        "name": "1-Ensamblado_genoma_Bacillus_mojavensis",
+        "score": 0.6669499050604775,
+        "source_file": "data/workflows_published/1-Ensamblado_genoma_Bacillus_mojavensis__8b8e89b9b8801f2f.ga.json"
+      }
+    ]
+  },
+  {
+    "query": "which tools to use for proteomics search?",
+    "response": "User intent: The user wants to know which tools to use for proteomics search.\n\nRecommended tools:\n\n1. SearchToLib: This tool is recommended for performing targeted proteomics search against spectral libraries. It is supported by the workflow's step 3, where it is used to obtain peptide matches from the spectral libraries. The expected input is a target protein fasta file, and the output is a log file (txt) and an elib file (elib).\n2. msconvert: This tool is recommended for converting raw data files to mzML format. It is supported by the workflow's step 2, where it is used to convert the raw data files to mzML format before performing targeted proteomics search. The expected input is a raw data file, and the output is an mzML file (output).\n\nSuggested workflow path: The most likely ordered tool chain for this query is:\n\n1. SearchToLib\n2. msconvert\n\nAlternatives: No alternative tools appear in the retrieved context.\n\nLimitations: Insufficient context for reliable recommendation of additional tools.\n\nConfidence: High",
+    "generated_at": "2026-04-30T12:19:13.726623+00:00",
+    "model": "llama2:7b",
+    "embed_model": "nomic-embed-text",
+    "top_k": 1,
+    "prompt_file": "prompts/workflow_rag.yml",
+    "retrieved_workflows": [
+      {
+        "workflow_id": "14f9c2099db30570",
+        "name": "05042021_EncyclopeDIA Standard Workflow",
+        "score": 0.7352083513497261,
+        "source_file": "data/workflows_published/05042021_EncyclopeDIA_Standard_Workflow__14f9c2099db30570.ga.json"
+      }
+    ]
+  }
+]
